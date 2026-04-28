@@ -1,5 +1,5 @@
 $ProjectRoot = Split-Path -Parent $PSScriptRoot
-$RawDir = Join-Path $ProjectRoot "data\raw"
+$RawDir = Join-Path $ProjectRoot "scripts\data\raw"
 $ShaFile = Join-Path $RawDir "enwiki-latest-sha1sums.txt"
 
 Get-ChildItem $RawDir -File | Where-Object { $_.Name -ne "enwiki-latest-sha1sums.txt" } | ForEach-Object {

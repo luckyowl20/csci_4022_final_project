@@ -20,8 +20,9 @@ wiki-graph-project/
   requirements.txt
   .gitignore
 
-  data/
-    raw/
+  scripts/
+    data/
+      raw/
       enwiki-latest-pages-articles-multistream.xml.bz2
       enwiki-latest-pages-articles-multistream-index.txt.bz2
       enwiki-latest-page.sql.gz
@@ -92,7 +93,7 @@ wiki-graph-project/
 The raw data should already be downloading into:
 
 ```text
-data/raw/
+scripts/data/raw/
 ```
 
 Required files:
@@ -177,10 +178,10 @@ The raw `.sql.gz` files are huge and difficult to query directly. Converting the
 ## Inputs
 
 ```text
-data/raw/enwiki-latest-page.sql.gz
-data/raw/enwiki-latest-linktarget.sql.gz
-data/raw/enwiki-latest-pagelinks.sql.gz
-data/raw/enwiki-latest-categorylinks.sql.gz
+scripts/data/raw/enwiki-latest-page.sql.gz
+scripts/data/raw/enwiki-latest-linktarget.sql.gz
+scripts/data/raw/enwiki-latest-pagelinks.sql.gz
+scripts/data/raw/enwiki-latest-categorylinks.sql.gz
 ```
 
 ## Outputs
@@ -361,7 +362,7 @@ PageRank uses links, but the similarity analysis requires article content.
 ## Input
 
 ```text
-data/raw/enwiki-latest-pages-articles-multistream.xml.bz2
+scripts/data/raw/enwiki-latest-pages-articles-multistream.xml.bz2
 ```
 
 ## Output
@@ -1183,7 +1184,7 @@ Do not commit raw or processed Wikipedia data.
 Add to `.gitignore`:
 
 ```text
-data/raw/
+scripts/data/raw/
 data/processed/
 data/results/
 .venv/

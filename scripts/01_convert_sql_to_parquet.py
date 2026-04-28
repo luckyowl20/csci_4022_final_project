@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+from pathlib import Path
 
 from pipeline_utils import extract_create_columns, iter_insert_rows, require
 
@@ -25,7 +26,7 @@ TABLES = {
     },
     "categorylinks": {
         "file": "enwiki-latest-categorylinks.sql.gz",
-        "columns": ["cl_from", "cl_to"],
+        "columns": ["cl_from", "cl_target_id"],
         "output": "categorylinks.parquet",
         "optional": True,
     },
@@ -45,8 +46,15 @@ def convert_table(table: str, chunk_size: int) -> None:
 
     source_columns = extract_create_columns(sql_path, table)
     keep_columns = spec["columns"]
+    missing = [column for column in keep_columns if column not in source_columns]
+    if missing:
+        raise SystemExit(
+            f"{table}: dump schema does not contain expected columns {missing}. "
+            f"Available columns are: {source_columns}"
+        )
     indexes = [source_columns.index(column) for column in keep_columns]
     output_path = config.processed_path(spec["output"])
+    temp_output_path = output_path.with_suffix(output_path.suffix + ".tmp")
 
     writer = None
     buffer = []
@@ -57,7 +65,7 @@ def convert_table(table: str, chunk_size: int) -> None:
             if len(buffer) >= chunk_size:
                 frame = pd.DataFrame.from_records(buffer, columns=keep_columns)
                 arrow_table = pa.Table.from_pandas(frame, preserve_index=False)
-                writer = writer or pq.ParquetWriter(output_path, arrow_table.schema)
+                writer = writer or pq.ParquetWriter(temp_output_path, arrow_table.schema)
                 writer.write_table(arrow_table)
                 total += len(buffer)
                 print(f"{table}: wrote {total:,} rows")
@@ -65,12 +73,13 @@ def convert_table(table: str, chunk_size: int) -> None:
         if buffer:
             frame = pd.DataFrame.from_records(buffer, columns=keep_columns)
             arrow_table = pa.Table.from_pandas(frame, preserve_index=False)
-            writer = writer or pq.ParquetWriter(output_path, arrow_table.schema)
+            writer = writer or pq.ParquetWriter(temp_output_path, arrow_table.schema)
             writer.write_table(arrow_table)
             total += len(buffer)
     finally:
         if writer is not None:
             writer.close()
+    Path(temp_output_path).replace(output_path)
     print(f"{table}: complete -> {output_path} ({total:,} rows)")
 
 
@@ -85,4 +94,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

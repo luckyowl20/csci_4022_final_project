@@ -4,8 +4,7 @@ from pathlib import Path
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-RAW_DIR = PROJECT_ROOT / "data" / "raw"
-LEGACY_RAW_DIR = PROJECT_ROOT / "scripts" / "data" / "raw"
+RAW_DIR = PROJECT_ROOT / "scripts" / "data" / "raw"
 PROCESSED_DIR = PROJECT_ROOT / "data" / "processed"
 RESULTS_DIR = PROJECT_ROOT / "data" / "results"
 FIGURES_DIR = RESULTS_DIR / "figures"
@@ -38,17 +37,12 @@ def ensure_dirs() -> None:
 
 
 def raw_path(filename: str, required: bool = True) -> Path:
-    canonical = RAW_DIR / filename
-    if canonical.exists():
-        return canonical
-    legacy = LEGACY_RAW_DIR / filename
-    if legacy.exists():
-        return legacy
+    path = RAW_DIR / filename
+    if path.exists():
+        return path
     if required:
-        raise FileNotFoundError(
-            f"Could not find {filename} in {RAW_DIR} or legacy location {LEGACY_RAW_DIR}."
-        )
-    return canonical
+        raise FileNotFoundError(f"Could not find {filename} in {RAW_DIR}.")
+    return path
 
 
 def processed_path(filename: str) -> Path:
@@ -64,4 +58,3 @@ def table_path(filename: str) -> Path:
 def figure_path(filename: str) -> Path:
     ensure_dirs()
     return FIGURES_DIR / filename
-
