@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from pipeline_utils import require
+from pipeline_utils import require, require_complete
 
 config = __import__("00_config")
 
@@ -9,9 +9,9 @@ def main() -> None:
     pd = require("pandas")
     plt = require("matplotlib.pyplot")
 
-    pagerank = pd.read_parquet(config.processed_path("pagerank.parquet"))
-    summary = pd.read_parquet(config.processed_path("similarity_summary.parquet"))
-    pairs = pd.read_parquet(config.processed_path("pairwise_similarity.parquet"))
+    pagerank = pd.read_parquet(require_complete(config.processed_path("pagerank.parquet"), "pagerank.parquet"))
+    summary = pd.read_parquet(require_complete(config.processed_path("similarity_summary.parquet"), "similarity_summary.parquet"))
+    pairs = pd.read_parquet(require_complete(config.processed_path("pairwise_similarity.parquet"), "pairwise_similarity.parquet"))
     percentile = pd.read_csv(config.table_path("pagerank_percentile_similarity.csv"))
 
     plt.figure(figsize=(8, 5))
@@ -71,4 +71,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

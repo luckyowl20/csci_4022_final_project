@@ -50,6 +50,20 @@ def processed_path(filename: str) -> Path:
     return PROCESSED_DIR / filename
 
 
+def parquet_input(filename: str) -> Path:
+    parts_dir = processed_path(filename).with_suffix(".parquet.parts")
+    if (parts_dir / "_SUCCESS").exists():
+        return parts_dir
+    return processed_path(filename)
+
+
+def duckdb_parquet_input(filename: str) -> str:
+    path = parquet_input(filename)
+    if path.is_dir():
+        return (path / "*.parquet").as_posix()
+    return path.as_posix()
+
+
 def table_path(filename: str) -> Path:
     ensure_dirs()
     return TABLES_DIR / filename

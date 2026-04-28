@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import time
 
-from pipeline_utils import require, write_json
+from pipeline_utils import mark_complete, replace_temp_output, require, require_complete, write_json
 
 config = __import__("00_config")
 
@@ -12,8 +12,8 @@ def main() -> None:
     pd = require("pandas")
 
     start = time.time()
-    pages = pd.read_parquet(config.processed_path("pages_clean.parquet"))
-    edges = pd.read_parquet(config.processed_path("edges.parquet"))
+    pages = pd.read_parquet(require_complete(config.processed_path("pages_clean.parquet"), "pages_clean.parquet"))
+    edges = pd.read_parquet(require_complete(config.processed_path("edges.parquet"), "edges.parquet"))
     pages = pages.reset_index(drop=True)
     n = len(pages)
     if n == 0:
@@ -54,7 +54,11 @@ def main() -> None:
     result["rank"] = result.index + 1
     result["percentile"] = 1.0 - (result["rank"] - 1) / max(len(result) - 1, 1)
     result = result[["page_id", "title", "pagerank", "rank", "percentile", "in_degree", "out_degree"]]
-    result.to_parquet(config.processed_path("pagerank.parquet"), index=False)
+    output = config.processed_path("pagerank.parquet")
+    temp_output = output.with_suffix(output.suffix + ".tmp")
+    result.to_parquet(temp_output, index=False)
+    replace_temp_output(temp_output, output)
+    mark_complete(output, {"rows": len(result)})
     result.head(100).to_csv(config.table_path("top_100_pagerank.csv"), index=False)
     write_json(
         config.processed_path("pagerank_run_stats.json"),

@@ -28,6 +28,40 @@ def write_json(path: Path, payload: dict) -> None:
     path.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
 
 
+def complete_marker_path(path: Path) -> Path:
+    return path.with_name(path.name + ".complete.json")
+
+
+def mark_complete(path: Path, payload: dict | None = None) -> None:
+    marker = complete_marker_path(path)
+    marker_payload = {"path": str(path), "status": "complete"}
+    if payload:
+        marker_payload.update(payload)
+    write_json(marker, marker_payload)
+
+
+def is_complete(path: Path) -> bool:
+    if path.is_dir():
+        return (path / "_SUCCESS").exists()
+    return path.exists() and complete_marker_path(path).exists()
+
+
+def require_complete(path: Path, label: str | None = None) -> Path:
+    if not is_complete(path):
+        name = label or path.name
+        raise SystemExit(
+            f"{name} is missing or incomplete: {path}. "
+            f"Rerun the step that creates it before continuing."
+        )
+    return path
+
+
+def replace_temp_output(temp_path: Path, output_path: Path) -> None:
+    if not temp_path.exists():
+        raise RuntimeError(f"Expected temporary output was not created: {temp_path}")
+    temp_path.replace(output_path)
+
+
 def normalize_title(title: str) -> str:
     return title.replace(" ", "_")
 
@@ -159,4 +193,3 @@ def load_config_module():
     if str(scripts_dir) not in sys.path:
         sys.path.insert(0, str(scripts_dir))
     return importlib.import_module("00_config")
-
