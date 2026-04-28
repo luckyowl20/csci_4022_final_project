@@ -392,11 +392,15 @@ normalize whitespace
 count words
 ```
 
-## Recommended library
+## Text cleaning approach
 
-```text
-mwparserfromhell
-```
+Use the pure-Python cleaner in `scripts/04_extract_article_text.py`.
+
+Avoid `mwparserfromhell` for this project because it may try to compile a C
+extension on Windows/Python versions without a prebuilt wheel. The in-repo
+cleaner removes common templates, references, tables, HTML tags, file/category
+links, headings, and basic wiki markup well enough for the shingle-based
+similarity analysis.
 
 ## Useful debug option
 
