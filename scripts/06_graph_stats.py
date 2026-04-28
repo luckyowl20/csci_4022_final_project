@@ -1,14 +1,16 @@
 from __future__ import annotations
 
-from pipeline_utils import require, write_json
+from pipeline_utils import require, require_complete, write_json
 
 config = __import__("00_config")
 
 
 def main() -> None:
     pd = require("pandas")
-    pages = pd.read_parquet(config.processed_path("pages_clean.parquet"), columns=["page_id"])
-    edges = pd.read_parquet(config.processed_path("edges.parquet"))
+    pages_path = require_complete(config.processed_path("pages_clean.parquet"), "pages_clean.parquet")
+    edges_path = require_complete(config.processed_path("edges.parquet"), "edges.parquet")
+    pages = pd.read_parquet(pages_path, columns=["page_id"])
+    edges = pd.read_parquet(edges_path)
 
     nodes = pages["page_id"]
     in_degree = edges.groupby("target_page_id").size()
@@ -37,4 +39,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

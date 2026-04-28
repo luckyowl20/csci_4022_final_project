@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import argparse
 
-from pipeline_utils import require
+from pipeline_utils import mark_complete, replace_temp_output, require, require_complete
 
 config = __import__("00_config")
 
@@ -20,8 +20,11 @@ def main() -> None:
     args = parser.parse_args()
 
     pd = require("pandas")
-    pagerank = pd.read_parquet(config.processed_path("pagerank.parquet"))
-    articles = pd.read_parquet(config.processed_path("articles_clean.parquet"), columns=["page_id", "word_count"])
+    pagerank = pd.read_parquet(require_complete(config.processed_path("pagerank.parquet"), "pagerank.parquet"))
+    articles = pd.read_parquet(
+        require_complete(config.processed_path("articles_clean.parquet"), "articles_clean.parquet"),
+        columns=["page_id", "word_count"],
+    )
     base = pagerank.merge(articles, on="page_id", how="inner")
     if len(base) == 0:
         raise SystemExit("No pages with clean article text are available.")
@@ -38,10 +41,10 @@ def main() -> None:
         take_group(base, "random", args.group_size, config.RANDOM_SEED),
     ]
 
-    category_path = config.processed_path("categorylinks.parquet")
+    category_path = config.parquet_input("categorylinks.parquet")
     if category_path.exists():
         categories = pd.read_parquet(category_path)
-        linktarget_path = config.processed_path("linktarget.parquet")
+        linktarget_path = config.parquet_input("linktarget.parquet")
         if "cl_target_id" in categories.columns and linktarget_path.exists():
             linktargets = pd.read_parquet(linktarget_path, columns=["lt_id", "lt_namespace", "lt_title"])
             categories = categories.merge(
@@ -61,7 +64,11 @@ def main() -> None:
 
     output = pd.concat(groups, ignore_index=True)
     output = output[["page_id", "title", "group_name", "pagerank", "rank", "percentile", "word_count"]]
-    output.to_parquet(config.processed_path("experiment_groups.parquet"), index=False)
+    output_path = config.processed_path("experiment_groups.parquet")
+    temp_output = output_path.with_suffix(output_path.suffix + ".tmp")
+    output.to_parquet(temp_output, index=False)
+    replace_temp_output(temp_output, output_path)
+    mark_complete(output_path, {"rows": len(output)})
     print(output.groupby("group_name").size().to_string())
 
 

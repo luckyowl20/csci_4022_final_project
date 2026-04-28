@@ -4,7 +4,7 @@ import argparse
 import hashlib
 import json
 
-from pipeline_utils import require, tokenize
+from pipeline_utils import mark_complete, replace_temp_output, require, require_complete, tokenize
 
 config = __import__("00_config")
 
@@ -37,8 +37,11 @@ def main() -> None:
     args = parser.parse_args()
 
     pd = require("pandas")
-    groups = pd.read_parquet(config.processed_path("experiment_groups.parquet"))
-    articles = pd.read_parquet(config.processed_path("articles_clean.parquet"), columns=["page_id", "clean_text"])
+    groups = pd.read_parquet(require_complete(config.processed_path("experiment_groups.parquet"), "experiment_groups.parquet"))
+    articles = pd.read_parquet(
+        require_complete(config.processed_path("articles_clean.parquet"), "articles_clean.parquet"),
+        columns=["page_id", "clean_text"],
+    )
     selected = groups.merge(articles, on="page_id", how="inner")
 
     shingle_rows = []
@@ -63,11 +66,18 @@ def main() -> None:
             }
         )
 
-    pd.DataFrame(shingle_rows).to_parquet(config.processed_path("shingles.parquet"), index=False)
-    pd.DataFrame(signature_rows).to_parquet(config.processed_path("minhash_signatures.parquet"), index=False)
+    shingles_path = config.processed_path("shingles.parquet")
+    signatures_path = config.processed_path("minhash_signatures.parquet")
+    shingles_temp = shingles_path.with_suffix(shingles_path.suffix + ".tmp")
+    signatures_temp = signatures_path.with_suffix(signatures_path.suffix + ".tmp")
+    pd.DataFrame(shingle_rows).to_parquet(shingles_temp, index=False)
+    pd.DataFrame(signature_rows).to_parquet(signatures_temp, index=False)
+    replace_temp_output(shingles_temp, shingles_path)
+    replace_temp_output(signatures_temp, signatures_path)
+    mark_complete(shingles_path, {"rows": len(shingle_rows)})
+    mark_complete(signatures_path, {"rows": len(signature_rows)})
     print(f"Wrote shingles and MinHash signatures for {len(shingle_rows):,} selected pages")
 
 
 if __name__ == "__main__":
     main()
-

@@ -3,7 +3,7 @@ from __future__ import annotations
 import itertools
 import json
 
-from pipeline_utils import require
+from pipeline_utils import require, require_complete
 
 config = __import__("00_config")
 
@@ -16,10 +16,10 @@ def jaccard(a: set[str], b: set[str]) -> float:
 def main() -> None:
     pd = require("pandas")
     np = require("numpy")
-    summary = pd.read_parquet(config.processed_path("similarity_summary.parquet"))
-    pairs = pd.read_parquet(config.processed_path("pairwise_similarity.parquet"))
-    groups = pd.read_parquet(config.processed_path("experiment_groups.parquet"))
-    shingles = pd.read_parquet(config.processed_path("shingles.parquet"))
+    summary = pd.read_parquet(require_complete(config.processed_path("similarity_summary.parquet"), "similarity_summary.parquet"))
+    pairs = pd.read_parquet(require_complete(config.processed_path("pairwise_similarity.parquet"), "pairwise_similarity.parquet"))
+    groups = pd.read_parquet(require_complete(config.processed_path("experiment_groups.parquet"), "experiment_groups.parquet"))
+    shingles = pd.read_parquet(require_complete(config.processed_path("shingles.parquet"), "shingles.parquet"))
 
     summary.to_csv(config.table_path("similarity_summary.csv"), index=False)
     lookup = summary.set_index("group_name")["mean_similarity"].to_dict()
@@ -73,4 +73,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

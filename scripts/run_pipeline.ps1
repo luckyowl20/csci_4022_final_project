@@ -8,8 +8,8 @@ function Invoke-Step {
     }
 }
 
-#Invoke-Step python scripts\01_convert_sql_to_parquet.py --table page
-#Invoke-Step python scripts\01_convert_sql_to_parquet.py --table linktarget
+Invoke-Step python scripts\01_convert_sql_to_parquet.py --table page
+Invoke-Step python scripts\01_convert_sql_to_parquet.py --table linktarget
 Invoke-Step python scripts\01_convert_sql_to_parquet.py --table pagelinks
 Invoke-Step python scripts\01_convert_sql_to_parquet.py --table categorylinks
 

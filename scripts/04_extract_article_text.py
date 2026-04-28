@@ -5,7 +5,7 @@ import bz2
 import re
 import xml.etree.ElementTree as ET
 
-from pipeline_utils import require, tokenize
+from pipeline_utils import is_complete, mark_complete, replace_temp_output, require, tokenize
 
 config = __import__("00_config")
 
@@ -108,37 +108,80 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Extract article text from pages-articles XML dump.")
     parser.add_argument("--limit", type=int, default=None)
     parser.add_argument("--chunk-size", type=int, default=10_000)
+    parser.add_argument("--min-articles", type=int, default=1_000_000)
+    parser.add_argument("--strict-xml", action="store_true")
+    parser.add_argument("--force", action="store_true")
+    parser.add_argument(
+        "--finalize-existing",
+        action="store_true",
+        help="Mark an existing articles_raw.parquet as complete after reading its row count.",
+    )
     args = parser.parse_args()
 
-    pd = require("pandas")
     pa = require("pyarrow")
     pq = require("pyarrow.parquet")
 
     xml_path = config.raw_path("enwiki-latest-pages-articles-multistream.xml.bz2")
     output = config.processed_path("articles_raw.parquet")
+    if is_complete(output) and not args.force and args.limit is None:
+        print(f"articles: complete output already exists -> {output}")
+        return
+    if args.finalize_existing:
+        if not output.exists():
+            raise SystemExit(f"Cannot finalize missing output: {output}")
+        rows = pq.ParquetFile(output).metadata.num_rows
+        if rows < args.min_articles:
+            raise SystemExit(f"Refusing to finalize only {rows:,} rows; expected at least {args.min_articles:,}.")
+        mark_complete(output, {"rows": rows, "status": "complete_with_warnings", "finalized_existing": True})
+        print(f"Finalized existing article extraction output with {rows:,} rows: {output}")
+        return
+
+    pd = require("pandas")
+    temp_output = output.with_suffix(output.suffix + ".tmp")
     writer = None
     total = 0
     batch = []
+    parse_error = None
     try:
-        for record in page_records(xml_path, args.limit):
-            batch.append(record)
-            if len(batch) >= args.chunk_size:
+        try:
+            for record in page_records(xml_path, args.limit):
+                batch.append(record)
+                if len(batch) >= args.chunk_size:
+                    frame = pd.DataFrame.from_records(batch)
+                    table = pa.Table.from_pandas(frame, preserve_index=False)
+                    writer = writer or pq.ParquetWriter(temp_output, table.schema)
+                    writer.write_table(table)
+                    total += len(batch)
+                    print(f"articles: wrote {total:,} rows")
+                    batch.clear()
+        except ET.ParseError as exc:
+            parse_error = exc
+            if args.strict_xml or total < args.min_articles:
+                raise
+            print(f"articles: XML parse warning after {total:,} rows: {exc}")
+        if batch:
+            if parse_error and args.strict_xml:
+                raise parse_error
+            if parse_error and total + len(batch) < args.min_articles:
+                raise parse_error
+            try:
                 frame = pd.DataFrame.from_records(batch)
                 table = pa.Table.from_pandas(frame, preserve_index=False)
-                writer = writer or pq.ParquetWriter(output, table.schema)
+                writer = writer or pq.ParquetWriter(temp_output, table.schema)
                 writer.write_table(table)
                 total += len(batch)
-                print(f"articles: wrote {total:,} rows")
+            finally:
                 batch.clear()
-        if batch:
-            frame = pd.DataFrame.from_records(batch)
-            table = pa.Table.from_pandas(frame, preserve_index=False)
-            writer = writer or pq.ParquetWriter(output, table.schema)
-            writer.write_table(table)
-            total += len(batch)
     finally:
         if writer is not None:
             writer.close()
+    if total == 0:
+        raise SystemExit("No article text was extracted.")
+    replace_temp_output(temp_output, output)
+    marker = {"rows": total}
+    if parse_error is not None:
+        marker.update({"status": "complete_with_warnings", "xml_parse_error": str(parse_error)})
+    mark_complete(output, marker)
     print(f"Wrote {total:,} extracted articles to {output}")
 
 
