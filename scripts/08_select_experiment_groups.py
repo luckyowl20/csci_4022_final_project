@@ -41,7 +41,19 @@ def main() -> None:
     category_path = config.processed_path("categorylinks.parquet")
     if category_path.exists():
         categories = pd.read_parquet(category_path)
+        linktarget_path = config.processed_path("linktarget.parquet")
+        if "cl_target_id" in categories.columns and linktarget_path.exists():
+            linktargets = pd.read_parquet(linktarget_path, columns=["lt_id", "lt_namespace", "lt_title"])
+            categories = categories.merge(
+                linktargets[linktargets["lt_namespace"] == 14][["lt_id", "lt_title"]],
+                left_on="cl_target_id",
+                right_on="lt_id",
+                how="inner",
+            )
+            categories = categories.rename(columns={"lt_title": "cl_to"})
         for group_name, category in config.CATEGORY_GROUPS.items():
+            if "cl_to" not in categories.columns:
+                continue
             ids = categories.loc[categories["cl_to"] == category, "cl_from"].drop_duplicates()
             category_pages = base[base["page_id"].isin(ids)]
             if len(category_pages) > 0:
@@ -55,4 +67,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

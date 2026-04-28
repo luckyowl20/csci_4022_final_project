@@ -2,7 +2,7 @@ $ErrorActionPreference = "Stop"
 
 $ProjectRoot = Split-Path -Parent $PSScriptRoot
 $Base = "https://dumps.wikimedia.org/enwiki/latest"
-$RawDir = Join-Path $ProjectRoot "data\raw"
+$RawDir = Join-Path $ProjectRoot "scripts\data\raw"
 
 $Files = @(
     "enwiki-latest-sha1sums.txt",

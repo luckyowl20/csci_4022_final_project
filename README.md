@@ -10,15 +10,14 @@ across PageRank-based, random, and optional category-based article groups.
 python -m pip install -r requirements.txt
 ```
 
-Download scripts write to the repo-level `data\raw` directory:
+Download scripts write to the current raw dump directory, `scripts\data\raw`:
 
 ```powershell
 .\scripts\download-wiki.ps1
 .\scripts\checksum.ps1
 ```
 
-The analysis scripts also look in the legacy `scripts\data\raw` location so a
-partial download can still be used for testing.
+The analysis scripts use only that raw dump directory.
 
 ## Test A Small Text Extraction
 
