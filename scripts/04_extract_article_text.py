@@ -10,25 +10,64 @@ from pipeline_utils import require, tokenize
 config = __import__("00_config")
 
 
-TEMPLATE_RE = re.compile(r"\{\{.*?\}\}", re.DOTALL)
+COMMENT_RE = re.compile(r"<!--.*?-->", re.DOTALL)
 REF_RE = re.compile(r"<ref[^>/]*>.*?</ref>|<ref[^/]*/>", re.DOTALL | re.IGNORECASE)
 TAG_RE = re.compile(r"<[^>]+>")
-LINK_RE = re.compile(r"\[\[(?:[^|\]]*\|)?([^\]]+)\]\]")
+FILE_LINK_RE = re.compile(
+    r"\[\[(?:File|Image|Category):[^\]]*\]\]",
+    re.IGNORECASE,
+)
+LINK_RE = re.compile(r"\[\[([^\]|#]+)(?:#[^\]|]*)?(?:\|([^\]]+))?\]\]")
 BRACKET_LINK_RE = re.compile(r"\[https?://[^\s\]]+\s*([^\]]*)\]")
-MARKUP_RE = re.compile(r"'{2,}|={2,}|__\w+__")
+TABLE_RE = re.compile(r"\{\|.*?\|\}", re.DOTALL)
+HTML_ENTITY_RE = re.compile(r"&(?:nbsp|amp|lt|gt|quot|apos);", re.IGNORECASE)
+HEADING_RE = re.compile(r"={2,}\s*(.*?)\s*={2,}")
+LIST_PREFIX_RE = re.compile(r"(?m)^[*#;:]+")
+MARKUP_RE = re.compile(r"'{2,}|__\w+__|<nowiki>|</nowiki>", re.IGNORECASE)
+
+
+def strip_balanced(text: str, start: str, end: str) -> str:
+    output = []
+    depth = 0
+    i = 0
+    while i < len(text):
+        if text.startswith(start, i):
+            depth += 1
+            i += len(start)
+            continue
+        if depth and text.startswith(end, i):
+            depth -= 1
+            i += len(end)
+            continue
+        if depth == 0:
+            output.append(text[i])
+        i += 1
+    return "".join(output)
+
+
+def replace_internal_link(match: re.Match) -> str:
+    target, label = match.groups()
+    if ":" in target:
+        prefix = target.split(":", 1)[0].lower()
+        if prefix not in {"w", "wikipedia"}:
+            return " "
+    return label or target
 
 
 def clean_wikitext(text: str) -> str:
-    try:
-        mwparserfromhell = require("mwparserfromhell")
-        text = mwparserfromhell.parse(text).strip_code(normalize=True, collapse=True)
-    except SystemExit:
-        text = TEMPLATE_RE.sub(" ", text)
-        text = REF_RE.sub(" ", text)
-        text = LINK_RE.sub(r"\1", text)
-        text = BRACKET_LINK_RE.sub(r"\1", text)
-        text = TAG_RE.sub(" ", text)
-        text = MARKUP_RE.sub(" ", text)
+    text = COMMENT_RE.sub(" ", text)
+    text = REF_RE.sub(" ", text)
+    text = TABLE_RE.sub(" ", text)
+    text = strip_balanced(text, "{{", "}}")
+    text = strip_balanced(text, "{|", "|}")
+    text = FILE_LINK_RE.sub(" ", text)
+    text = LINK_RE.sub(replace_internal_link, text)
+    text = BRACKET_LINK_RE.sub(r"\1", text)
+    text = HEADING_RE.sub(r"\1", text)
+    text = LIST_PREFIX_RE.sub(" ", text)
+    text = TAG_RE.sub(" ", text)
+    text = HTML_ENTITY_RE.sub(" ", text)
+    text = MARKUP_RE.sub(" ", text)
     return re.sub(r"\s+", " ", text).strip()
 
 
@@ -105,4 +144,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-
