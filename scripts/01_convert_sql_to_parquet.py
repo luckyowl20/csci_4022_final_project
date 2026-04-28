@@ -4,7 +4,7 @@ import argparse
 import json
 from pathlib import Path
 
-from pipeline_utils import extract_create_columns, iter_insert_rows, require
+from pipeline_utils import extract_create_columns, is_complete, iter_insert_selected_rows, mark_complete, require
 
 config = __import__("00_config")
 
@@ -85,6 +85,7 @@ def write_part(
     columns_data: dict[str, list],
     columns: list[str],
     row_count: int,
+    compression: str,
 ) -> None:
     output_dir.mkdir(parents=True, exist_ok=True)
     part_path = output_dir / f"part-{part_number:06d}.parquet"
@@ -92,7 +93,7 @@ def write_part(
     arrow_table = make_arrow_table(pa, columns_data, columns)
     if arrow_table.num_rows != row_count:
         raise RuntimeError(f"{table}: part {part_number:06d} has {arrow_table.num_rows:,} rows, expected {row_count:,}.")
-    pq.write_table(arrow_table, temp_path, compression="zstd")
+    pq.write_table(arrow_table, temp_path, compression=compression)
     temp_path.replace(part_path)
     print(f"{table}: wrote part {part_number:06d} ({row_count:,} rows)")
 
@@ -133,7 +134,16 @@ def finalize_existing_parts(table: str, chunk_size: int) -> None:
     print(f"{table}: finalized existing parts -> {output_dir} ({total:,} rows)")
 
 
-def convert_table(table: str, chunk_size: int) -> None:
+def existing_single_file_is_valid(pq, output_path: Path) -> int | None:
+    if not output_path.exists():
+        return None
+    try:
+        return int(pq.ParquetFile(output_path).metadata.num_rows)
+    except Exception:
+        return None
+
+
+def convert_table(table: str, chunk_size: int, force: bool = False, compression: str = "snappy") -> None:
     spec = TABLES[table]
     sql_path = config.raw_path(spec["file"], required=not spec.get("optional", False))
     if not sql_path.exists():
@@ -156,9 +166,17 @@ def convert_table(table: str, chunk_size: int) -> None:
     temp_output_path = output_path.with_suffix(output_path.suffix + ".tmp")
     part_files = spec.get("part_files", False)
     output_dir = output_path.with_suffix(".parquet.parts")
-    if part_files and (output_dir / "_SUCCESS").exists():
-        print(f"{table}: complete output already exists -> {output_dir}")
-        return
+    if not force:
+        if part_files and (output_dir / "_SUCCESS").exists():
+            print(f"{table}: complete output already exists -> {output_dir}")
+            return
+        if not part_files:
+            existing_rows = existing_single_file_is_valid(pq, output_path)
+            if existing_rows is not None:
+                if not is_complete(output_path):
+                    mark_complete(output_path, {"rows": existing_rows, "finalized_existing": True})
+                print(f"{table}: complete output already exists -> {output_path} ({existing_rows:,} rows)")
+                return
     part_rows = load_part_manifest(output_dir) if part_files else {}
     existing_parts = existing_contiguous_parts(output_dir) if part_files else []
     resume_part_number = len(existing_parts)
@@ -176,23 +194,33 @@ def convert_table(table: str, chunk_size: int) -> None:
     skipped_rows = 0
     resume_rows = sum(part_rows.get(f"{part_number:06d}", chunk_size) for part_number in range(resume_part_number))
     try:
-        for row in iter_insert_rows(sql_path, table):
+        for row in iter_insert_selected_rows(sql_path, table, indexes):
             if skipped_rows < resume_rows:
                 skipped_rows += 1
                 total += 1
                 continue
-            for column, index in zip(keep_columns, indexes):
-                columns_data[column].append(row[index])
+            for column, value in zip(keep_columns, row):
+                columns_data[column].append(value)
             buffered_rows += 1
             if buffered_rows >= chunk_size:
                 if part_files:
-                    write_part(pq, pa, output_dir, table, part_number + resume_part_number, columns_data, keep_columns, buffered_rows)
+                    write_part(
+                        pq,
+                        pa,
+                        output_dir,
+                        table,
+                        part_number + resume_part_number,
+                        columns_data,
+                        keep_columns,
+                        buffered_rows,
+                        compression,
+                    )
                     part_rows[f"{part_number + resume_part_number:06d}"] = buffered_rows
                     write_part_manifest(output_dir, part_rows)
                     part_number += 1
                 else:
                     arrow_table = make_arrow_table(pa, columns_data, keep_columns)
-                    writer = writer or pq.ParquetWriter(temp_output_path, arrow_table.schema)
+                    writer = writer or pq.ParquetWriter(temp_output_path, arrow_table.schema, compression=compression)
                     writer.write_table(arrow_table)
                 total += buffered_rows
                 print(f"{table}: wrote {total:,} rows")
@@ -200,13 +228,23 @@ def convert_table(table: str, chunk_size: int) -> None:
                 buffered_rows = 0
         if buffered_rows:
             if part_files:
-                write_part(pq, pa, output_dir, table, part_number + resume_part_number, columns_data, keep_columns, buffered_rows)
+                write_part(
+                    pq,
+                    pa,
+                    output_dir,
+                    table,
+                    part_number + resume_part_number,
+                    columns_data,
+                    keep_columns,
+                    buffered_rows,
+                    compression,
+                )
                 part_rows[f"{part_number + resume_part_number:06d}"] = buffered_rows
                 write_part_manifest(output_dir, part_rows)
                 part_number += 1
             else:
                 arrow_table = make_arrow_table(pa, columns_data, keep_columns)
-                writer = writer or pq.ParquetWriter(temp_output_path, arrow_table.schema)
+                writer = writer or pq.ParquetWriter(temp_output_path, arrow_table.schema, compression=compression)
                 writer.write_table(arrow_table)
             total += buffered_rows
     finally:
@@ -238,6 +276,7 @@ def convert_table(table: str, chunk_size: int) -> None:
     else:
         Path(temp_output_path).replace(output_path)
         validate_output(pq, table, output_path, output_dir, total, part_files)
+        mark_complete(output_path, {"rows": total})
     final_path = output_dir if part_files else output_path
     print(f"{table}: complete -> {final_path} ({total:,} rows)")
 
@@ -251,6 +290,8 @@ def main() -> None:
         action="store_true",
         help="Trust existing contiguous part files, write their manifest and _SUCCESS marker, and exit.",
     )
+    parser.add_argument("--force", action="store_true", help="Regenerate output even when a complete output already exists.")
+    parser.add_argument("--compression", default="snappy", choices=["snappy", "zstd", "none"])
     args = parser.parse_args()
     config.ensure_dirs()
     if args.chunk_size is None:
@@ -258,7 +299,8 @@ def main() -> None:
     if args.finalize_existing:
         finalize_existing_parts(args.table, args.chunk_size)
         return
-    convert_table(args.table, args.chunk_size)
+    compression = None if args.compression == "none" else args.compression
+    convert_table(args.table, args.chunk_size, force=args.force, compression=compression)
 
 
 if __name__ == "__main__":

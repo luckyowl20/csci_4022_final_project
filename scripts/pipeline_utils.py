@@ -161,6 +161,58 @@ def split_insert_tuples(values_sql: str) -> Iterator[list]:
             token.append(char)
 
 
+def split_insert_selected_tuples(values_sql: str, indexes: list[int]) -> Iterator[list]:
+    selected_positions = {source_index: output_index for output_index, source_index in enumerate(indexes)}
+    max_index = max(indexes)
+    row = [None] * len(indexes)
+    token = []
+    field_index = 0
+    in_string = False
+    escape = False
+    in_row = False
+    keep_token = False
+    for char in values_sql:
+        if not in_row:
+            if char == "(":
+                in_row = True
+                row = [None] * len(indexes)
+                token = []
+                field_index = 0
+                keep_token = field_index in selected_positions
+            continue
+        if in_string:
+            if keep_token:
+                token.append(char)
+            if escape:
+                escape = False
+            elif char == "\\":
+                escape = True
+            elif char == "'":
+                in_string = False
+            continue
+        if char == "'":
+            in_string = True
+            if keep_token:
+                token.append(char)
+        elif char == ",":
+            if keep_token:
+                row[selected_positions[field_index]] = coerce_sql_value("".join(token))
+            field_index += 1
+            if field_index > max_index:
+                keep_token = False
+            else:
+                keep_token = field_index in selected_positions
+            token = []
+        elif char == ")":
+            if keep_token:
+                row[selected_positions[field_index]] = coerce_sql_value("".join(token))
+            yield row
+            in_row = False
+            token = []
+        elif keep_token:
+            token.append(char)
+
+
 def extract_create_columns(sql_path: Path, table: str) -> list[str]:
     in_create = False
     columns = []
@@ -186,6 +238,15 @@ def iter_insert_rows(sql_path: Path, table: str) -> Iterator[list]:
             continue
         values_sql = line[len(prefix) :].rstrip(";")
         yield from split_insert_tuples(values_sql)
+
+
+def iter_insert_selected_rows(sql_path: Path, table: str, indexes: list[int]) -> Iterator[list]:
+    prefix = f"INSERT INTO `{table}` VALUES "
+    for line in read_sql_lines_gz(sql_path):
+        if not line.startswith(prefix):
+            continue
+        values_sql = line[len(prefix) :].rstrip(";")
+        yield from split_insert_selected_tuples(values_sql, indexes)
 
 
 def load_config_module():
