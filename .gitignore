@@ -1,6 +1,5 @@
 data/raw/
 data/processed/
-data/results/
 scripts/data/
 .venv/
 __pycache__/
