@@ -1,0 +1,4 @@
+question,metric,value,interpretation
+Top PageRank diversity vs random,mean_similarity_difference_top_minus_random,0.0033954433320261845,Negative values mean top PageRank pages are more diverse than random pages.
+Top vs bottom PageRank similarity,mean_similarity_difference_top_minus_bottom,0.0028948012565243597,Negative values mean top PageRank pages are less similar than bottom PageRank pages.
+MinHash validation,mean_absolute_error_minhash_vs_exact,0.00218671558971029,Lower values mean MinHash closely approximates exact Jaccard on selected pairs.
